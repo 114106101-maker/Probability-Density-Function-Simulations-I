@@ -326,6 +326,138 @@ if st.session_state.last_run_signature != (int(total_n), int(seed)):
     st.session_state.anim_status = "idle"
     st.session_state.current_step_idx = 0
 
+
+# ============================================================
+# 常態分布「模擬動畫」：使用少量動畫幀，避免 Streamlit Cloud 卡頓
+# ============================================================
+def normal_simulation_animation(mu, sigma, total_n, seed, key_prefix):
+    st.subheader("🎬 常態分布模擬動畫")
+
+    st.caption(
+        "動畫會逐步產生隨機樣本，畫面只更新有限幀，"
+        "避免大量重繪造成 Streamlit Cloud 卡頓。"
+    )
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        frame_count = st.slider(
+            "動畫幀數",
+            min_value=5,
+            max_value=30,
+            value=15,
+            key=f"{key_prefix}_frames"
+        )
+    with col2:
+        delay = st.slider(
+            "每幀速度（秒）",
+            min_value=0.02,
+            max_value=0.30,
+            value=0.08,
+            step=0.01,
+            key=f"{key_prefix}_delay"
+        )
+    with col3:
+        animation_n = st.slider(
+            "動畫樣本數",
+            min_value=100,
+            max_value=min(total_n, 2000),
+            value=min(500, total_n),
+            step=100,
+            key=f"{key_prefix}_animation_n"
+        )
+
+    start = st.button(
+        "▶️ 開始模擬動畫",
+        type="primary",
+        key=f"{key_prefix}_start"
+    )
+
+    if start:
+        rng = np.random.default_rng(seed + 999)
+        samples = rng.normal(mu, sigma, animation_n)
+
+        chart_placeholder = st.empty()
+        progress_placeholder = st.empty()
+        status_placeholder = st.empty()
+
+        # 不需要每個樣本都重畫，固定產生有限動畫幀
+        frame_sizes = np.linspace(
+            max(10, animation_n // frame_count),
+            animation_n,
+            frame_count,
+            dtype=int
+        )
+        frame_sizes = np.unique(frame_sizes)
+
+        for frame_no, current_n in enumerate(frame_sizes, start=1):
+            current = samples[:current_n]
+
+            frame_df = pd.DataFrame({
+                "模擬編號": np.arange(1, current_n + 1),
+                "X": current
+            })
+
+            # 顯示目前產生的樣本
+            chart = (
+                alt.Chart(frame_df)
+                .mark_circle(size=28, opacity=0.55)
+                .encode(
+                    x=alt.X(
+                        "模擬編號:Q",
+                        title="模擬編號"
+                    ),
+                    y=alt.Y(
+                        "X:Q",
+                        title="X"
+                    ),
+                    tooltip=[
+                        alt.Tooltip("模擬編號:Q", title="第幾次"),
+                        alt.Tooltip("X:Q", title="X", format=".3f")
+                    ]
+                )
+                .properties(
+                    height=300,
+                    title=f"常態分布模擬：已產生 {current_n:,} / {animation_n:,} 筆"
+                )
+            )
+
+            chart_placeholder.altair_chart(
+                chart,
+                use_container_width=True
+            )
+
+            progress_placeholder.progress(
+                current_n / animation_n
+            )
+
+            status_placeholder.info(
+                f"🎲 第 {frame_no}/{len(frame_sizes)} 幀　"
+                f"目前樣本數：{current_n:,}　"
+                f"平均：{np.mean(current):.3f}　"
+                f"標準差：{np.std(current, ddof=1) if current_n > 1 else 0:.3f}"
+            )
+
+            time.sleep(delay)
+
+        status_placeholder.success(
+            f"✅ 動畫完成！共模擬 {animation_n:,} 筆資料。"
+        )
+
+        # 最後留下完整動畫資料，方便後續查看
+        st.session_state[f"{key_prefix}_animation_data"] = samples
+
+    if f"{key_prefix}_animation_data" in st.session_state:
+        with st.expander("🔍 查看動畫最後產生的資料"):
+            animation_data = st.session_state[f"{key_prefix}_animation_data"]
+            st.dataframe(
+                pd.DataFrame({
+                    "模擬編號": np.arange(1, len(animation_data) + 1),
+                    "X": animation_data
+                }).head(100).style.format({"X": "{:.4f}"}),
+                use_container_width=True,
+                hide_index=True
+            )
+
 # ============================================================
 # 4. 常態分布新實驗（保留原有所有功能）
 # ============================================================
@@ -336,6 +468,14 @@ if mode == "常態分布：68-95-99.7 法則":
 
     data = simulate_normal_10000(seed)
     data100 = simulate_normal_100(seed, 100)
+
+    normal_simulation_animation(
+        mu=100,
+        sigma=15,
+        total_n=10000,
+        seed=seed,
+        key_prefix="normal_68"
+    )
 
     mean_v = float(np.mean(data))
     std_v = float(np.std(data, ddof=1))
@@ -371,6 +511,15 @@ elif mode == "常態分布：P(X>160) 與第95百分位數":
     模擬 n=10,000，計算 P(X>160)、理論臨界值，以及模擬第95百分位數。</div>""", unsafe_allow_html=True)
 
     data=simulate_normal_130(seed,10000)
+
+    normal_simulation_animation(
+        mu=130,
+        sigma=20,
+        total_n=10000,
+        seed=seed,
+        key_prefix="normal_160"
+    )
+
     z=(160-130)/20
     theory_p=1-normal_cdf_scalar(160,130,20)
     c_theory=130+20*1.6448536269514722
