@@ -330,121 +330,66 @@ if st.session_state.last_run_signature != (int(total_n), int(seed)):
 # ============================================================
 # 常態分布「模擬動畫」：使用少量動畫幀，避免 Streamlit Cloud 卡頓
 # ============================================================
-def normal_simulation_animation(mu, sigma, total_n, seed, key_prefix):
+def normal_simulation_animation(mu, sigma, total_n, seed, key_prefix, start_animation=False, fps=6):
+    """常態分布動畫：直接使用原本側邊欄的「🚀 開始 Start」按鈕。"""
     st.subheader("🎬 常態分布模擬動畫")
+    st.caption("按左側原本的「🚀 開始 Start」後，常態分布會同步開始動畫；不另外新增開始按鈕。")
 
-    st.caption(
-        "動畫會逐步產生隨機樣本，畫面只更新有限幀，"
-        "避免大量重繪造成 Streamlit Cloud 卡頓。"
-    )
+    # 為了避免 Streamlit Cloud 卡頓，動畫只顯示有限幀。
+    animation_n = min(int(total_n), 500)
+    frame_count = min(20, max(8, int(fps * 2)))
+    delay = 1.0 / max(1, int(fps))
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        frame_count = st.slider(
-            "動畫幀數",
-            min_value=5,
-            max_value=30,
-            value=15,
-            key=f"{key_prefix}_frames"
-        )
-    with col2:
-        delay = st.slider(
-            "每幀速度（秒）",
-            min_value=0.02,
-            max_value=0.30,
-            value=0.08,
-            step=0.01,
-            key=f"{key_prefix}_delay"
-        )
-    with col3:
-        animation_n = st.slider(
-            "動畫樣本數",
-            min_value=100,
-            max_value=min(total_n, 2000),
-            value=min(500, total_n),
-            step=100,
-            key=f"{key_prefix}_animation_n"
-        )
+    chart_placeholder = st.empty()
+    progress_placeholder = st.empty()
+    status_placeholder = st.empty()
 
-    start = st.button(
-        "▶️ 開始模擬動畫",
-        type="primary",
-        key=f"{key_prefix}_start"
-    )
-
-    if start:
-        rng = np.random.default_rng(seed + 999)
+    if start_animation:
+        rng = np.random.default_rng(int(seed) + 999 + int(mu))
         samples = rng.normal(mu, sigma, animation_n)
 
-        chart_placeholder = st.empty()
-        progress_placeholder = st.empty()
-        status_placeholder = st.empty()
-
-        # 不需要每個樣本都重畫，固定產生有限動畫幀
-        frame_sizes = np.linspace(
-            max(10, animation_n // frame_count),
-            animation_n,
-            frame_count,
-            dtype=int
-        )
+        frame_sizes = np.linspace(10, animation_n, frame_count, dtype=int)
         frame_sizes = np.unique(frame_sizes)
 
         for frame_no, current_n in enumerate(frame_sizes, start=1):
             current = samples[:current_n]
-
             frame_df = pd.DataFrame({
                 "模擬編號": np.arange(1, current_n + 1),
-                "X": current
+                "X": current,
             })
 
-            # 顯示目前產生的樣本
             chart = (
                 alt.Chart(frame_df)
                 .mark_circle(size=28, opacity=0.55)
                 .encode(
-                    x=alt.X(
-                        "模擬編號:Q",
-                        title="模擬編號"
-                    ),
-                    y=alt.Y(
-                        "X:Q",
-                        title="X"
-                    ),
+                    x=alt.X("模擬編號:Q", title="模擬編號"),
+                    y=alt.Y("X:Q", title="X"),
                     tooltip=[
                         alt.Tooltip("模擬編號:Q", title="第幾次"),
-                        alt.Tooltip("X:Q", title="X", format=".3f")
-                    ]
+                        alt.Tooltip("X:Q", title="X", format=".3f"),
+                    ],
                 )
                 .properties(
                     height=300,
-                    title=f"常態分布模擬：已產生 {current_n:,} / {animation_n:,} 筆"
+                    title=f"常態分布模擬：已產生 {current_n:,} / {animation_n:,} 筆",
                 )
             )
 
-            chart_placeholder.altair_chart(
-                chart,
-                use_container_width=True
-            )
-
-            progress_placeholder.progress(
-                current_n / animation_n
-            )
-
+            chart_placeholder.altair_chart(chart, use_container_width=True)
+            progress_placeholder.progress(current_n / animation_n)
+            current_std = np.std(current, ddof=1) if current_n > 1 else 0.0
             status_placeholder.info(
                 f"🎲 第 {frame_no}/{len(frame_sizes)} 幀　"
-                f"目前樣本數：{current_n:,}　"
+                f"樣本數：{current_n:,}　"
                 f"平均：{np.mean(current):.3f}　"
-                f"標準差：{np.std(current, ddof=1) if current_n > 1 else 0:.3f}"
+                f"標準差：{current_std:.3f}"
             )
-
             time.sleep(delay)
 
-        status_placeholder.success(
-            f"✅ 動畫完成！共模擬 {animation_n:,} 筆資料。"
-        )
-
-        # 最後留下完整動畫資料，方便後續查看
         st.session_state[f"{key_prefix}_animation_data"] = samples
+        status_placeholder.success(f"✅ 常態分布動畫完成！共模擬 {animation_n:,} 筆。")
+    else:
+        status_placeholder.info("👈 請按左側「🚀 開始 Start」，常態分布動畫會和原本動畫一起開始。")
 
     if f"{key_prefix}_animation_data" in st.session_state:
         with st.expander("🔍 查看動畫最後產生的資料"):
@@ -452,10 +397,10 @@ def normal_simulation_animation(mu, sigma, total_n, seed, key_prefix):
             st.dataframe(
                 pd.DataFrame({
                     "模擬編號": np.arange(1, len(animation_data) + 1),
-                    "X": animation_data
+                    "X": animation_data,
                 }).head(100).style.format({"X": "{:.4f}"}),
                 use_container_width=True,
-                hide_index=True
+                hide_index=True,
             )
 
 # ============================================================
@@ -474,7 +419,9 @@ if mode == "常態分布：68-95-99.7 法則":
         sigma=15,
         total_n=10000,
         seed=seed,
-        key_prefix="normal_68"
+        key_prefix="normal_68",
+        start_animation=start_click,
+        fps=fps,
     )
 
     mean_v = float(np.mean(data))
@@ -517,7 +464,9 @@ elif mode == "常態分布：P(X>160) 與第95百分位數":
         sigma=20,
         total_n=10000,
         seed=seed,
-        key_prefix="normal_160"
+        key_prefix="normal_160",
+        start_animation=start_click,
+        fps=fps,
     )
 
     z=(160-130)/20
